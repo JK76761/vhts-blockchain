@@ -1,0 +1,23 @@
+{
+  "name": "vhts-blockchain",
+  "version": "1.0.0",
+  "description": "IFB452 blockchain assignment project for a Vehicle History Tracking System.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "clean": "hardhat clean"
+  },
+  "keywords": [
+    "hardhat",
+    "solidity",
+    "blockchain",
+    "ifb452"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "hardhat": "^3.4.3"
+  }
+}
