@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+interface IMaintenanceLog {
+    function verifyOdometerConsistent(
+        string memory vin,
+        uint256 declaredMileage
+    ) external view returns (bool);
+}
+
 contract VehicleRegistry {
     address public admin;
+    address public maintenanceContract;
 
     enum Role {
         None,
@@ -35,6 +43,15 @@ contract VehicleRegistry {
 
     event RoleAssigned(address indexed account, Role role);
 
+    event MaintenanceContractLinked(address indexed maintenanceContract);
+
+    event OwnershipTransferred(
+        string vin,
+        address indexed previousOwner,
+        address indexed newOwner,
+        uint256 declaredMileage
+    );
+
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can perform this action");
         _;
@@ -60,6 +77,18 @@ contract VehicleRegistry {
 
         roles[account] = role;
         emit RoleAssigned(account, role);
+    }
+
+    function linkMaintenanceContract(
+        address maintenanceAddress
+    ) public onlyAdmin {
+        require(
+            maintenanceAddress != address(0),
+            "Maintenance contract cannot be zero address"
+        );
+
+        maintenanceContract = maintenanceAddress;
+        emit MaintenanceContractLinked(maintenanceAddress);
     }
 
     function registerVehicle(
@@ -92,6 +121,7 @@ contract VehicleRegistry {
         public
         view
         returns (
+            string memory vehicleVin,
             string memory make,
             string memory model,
             uint16 year,
@@ -104,6 +134,7 @@ contract VehicleRegistry {
 
         Vehicle memory vehicle = vehicles[vin];
         return (
+            vehicle.vin,
             vehicle.make,
             vehicle.model,
             vehicle.year,
@@ -115,5 +146,40 @@ contract VehicleRegistry {
     function isRegistered(string memory vin) public view returns (bool) {
         require(bytes(vin).length > 0, "VIN cannot be empty");
         return vehicles[vin].registered;
+    }
+
+    function transferOwnership(
+        string memory vin,
+        address newOwner,
+        uint256 declaredMileage
+    ) public {
+        require(bytes(vin).length > 0, "VIN cannot be empty");
+        require(vehicles[vin].registered, "Vehicle is not registered");
+        require(
+            msg.sender == vehicles[vin].currentOwner,
+            "Only current owner can transfer ownership"
+        );
+        require(newOwner != address(0), "New owner cannot be zero address");
+        require(
+            maintenanceContract != address(0),
+            "Maintenance contract is not linked"
+        );
+        require(
+            IMaintenanceLog(maintenanceContract).verifyOdometerConsistent(
+                vin,
+                declaredMileage
+            ),
+            "Declared mileage is lower than latest maintenance mileage"
+        );
+
+        address previousOwner = vehicles[vin].currentOwner;
+        vehicles[vin].currentOwner = newOwner;
+
+        emit OwnershipTransferred(
+            vin,
+            previousOwner,
+            newOwner,
+            declaredMileage
+        );
     }
 }
