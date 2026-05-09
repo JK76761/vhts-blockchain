@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {MaintenanceLog} from "../contracts/MaintenanceLog.sol";
+import {InspectionRecord} from "../contracts/InspectionRecord.sol";
 import {VehicleRegistry} from "../contracts/VehicleRegistry.sol";
 
 contract DemoActor {
@@ -31,6 +32,22 @@ contract DemoActor {
         );
     }
 
+    function addInspection(
+        InspectionRecord inspectionRecord,
+        string memory vin,
+        InspectionRecord.Result result,
+        string memory notes,
+        uint256 validityPeriodDays
+    ) public returns (uint256) {
+        return
+            inspectionRecord.addInspection(
+                vin,
+                result,
+                notes,
+                validityPeriodDays
+            );
+    }
+
     function transferOwnership(
         VehicleRegistry registry,
         string memory vin,
@@ -48,9 +65,11 @@ contract MaintenanceLogTest {
 
     VehicleRegistry private registry;
     MaintenanceLog private maintenanceLog;
+    InspectionRecord private inspectionRecord;
 
     DemoActor private manufacturer;
     DemoActor private serviceCentre;
+    DemoActor private government;
     DemoActor private owner;
     DemoActor private newOwner;
     DemoActor private unassignedAccount;
@@ -58,9 +77,11 @@ contract MaintenanceLogTest {
     function setUp() public {
         registry = new VehicleRegistry();
         maintenanceLog = new MaintenanceLog(address(registry));
+        inspectionRecord = new InspectionRecord(address(registry));
 
         manufacturer = new DemoActor();
         serviceCentre = new DemoActor();
+        government = new DemoActor();
         owner = new DemoActor();
         newOwner = new DemoActor();
         unassignedAccount = new DemoActor();
@@ -73,9 +94,15 @@ contract MaintenanceLogTest {
             address(serviceCentre),
             VehicleRegistry.Role.ServiceCentre
         );
+        registry.assignRole(
+            address(government),
+            VehicleRegistry.Role.Government
+        );
         registry.assignRole(address(owner), VehicleRegistry.Role.Owner);
         registry.assignRole(address(newOwner), VehicleRegistry.Role.Owner);
+
         registry.linkMaintenanceContract(address(maintenanceLog));
+        registry.linkInspectionContract(address(inspectionRecord));
     }
 
     function test_ManufacturerCanRegisterVehicle() public {
@@ -127,8 +154,8 @@ contract MaintenanceLogTest {
             10000
         );
 
-        MaintenanceLog.MaintenanceRecord[]
-            memory history = maintenanceLog.getServiceHistory(VIN);
+        MaintenanceLog.MaintenanceRecord[] memory history = maintenanceLog
+            .getServiceHistory(VIN);
 
         require(history.length == 1, "History should contain one record");
         require(history[0].recordId == 0, "Record ID should start at zero");
@@ -205,6 +232,7 @@ contract MaintenanceLogTest {
     function test_TransferOwnershipRequiresConsistentMileage() public {
         _registerVehicle();
 
+        // Add a service record at 10000 km, then a passing inspection
         serviceCentre.addServiceRecord(
             maintenanceLog,
             VIN,
@@ -212,7 +240,15 @@ contract MaintenanceLogTest {
             "Initial maintenance record",
             10000
         );
+        government.addInspection(
+            inspectionRecord,
+            VIN,
+            InspectionRecord.Result.Pass,
+            "Roadworthy",
+            365
+        );
 
+        // Lower declared mileage should be blocked even though inspection is valid
         try
             owner.transferOwnership(
                 registry,
@@ -221,7 +257,9 @@ contract MaintenanceLogTest {
                 9999
             )
         {
-            revert("Lower declared mileage should block ownership transfer");
+            revert(
+                "Lower declared mileage should block ownership transfer"
+            );
         } catch {
             (, , , , address currentOwner, ) = registry.getVehicleInfo(VIN);
             require(
@@ -229,6 +267,80 @@ contract MaintenanceLogTest {
                 "Owner should not change after failed transfer"
             );
         }
+
+        // Higher declared mileage with valid inspection should succeed
+        owner.transferOwnership(registry, VIN, address(newOwner), 12000);
+
+        (, , , , address updatedOwner, ) = registry.getVehicleInfo(VIN);
+        require(
+            updatedOwner == address(newOwner),
+            "Owner should update after valid transfer"
+        );
+    }
+
+    function test_TransferOwnershipRequiresValidInspection() public {
+        _registerVehicle();
+
+        serviceCentre.addServiceRecord(
+            maintenanceLog,
+            VIN,
+            "First service",
+            "Initial maintenance record",
+            10000
+        );
+
+        // No inspection added: transfer should be blocked even with valid mileage
+        try
+            owner.transferOwnership(
+                registry,
+                VIN,
+                address(newOwner),
+                12000
+            )
+        {
+            revert("Transfer without inspection should fail");
+        } catch {
+            (, , , , address currentOwner, ) = registry.getVehicleInfo(VIN);
+            require(
+                currentOwner == address(owner),
+                "Owner should not change without valid inspection"
+            );
+        }
+
+        // Add a failing inspection: still should be blocked
+        government.addInspection(
+            inspectionRecord,
+            VIN,
+            InspectionRecord.Result.Fail,
+            "Brake pads worn",
+            365
+        );
+
+        try
+            owner.transferOwnership(
+                registry,
+                VIN,
+                address(newOwner),
+                12000
+            )
+        {
+            revert("Transfer with failed inspection should fail");
+        } catch {
+            (, , , , address currentOwner, ) = registry.getVehicleInfo(VIN);
+            require(
+                currentOwner == address(owner),
+                "Owner should not change with failed inspection"
+            );
+        }
+
+        // Pass a fresh inspection: now transfer should succeed
+        government.addInspection(
+            inspectionRecord,
+            VIN,
+            InspectionRecord.Result.Pass,
+            "Re-inspected and approved",
+            365
+        );
 
         owner.transferOwnership(registry, VIN, address(newOwner), 12000);
 

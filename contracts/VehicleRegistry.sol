@@ -8,9 +8,16 @@ interface IMaintenanceLog {
     ) external view returns (bool);
 }
 
+interface IInspectionRecord {
+    function hasValidInspection(
+        string memory vin
+    ) external view returns (bool);
+}
+
 contract VehicleRegistry {
     address public admin;
     address public maintenanceContract;
+    address public inspectionContract;
 
     enum Role {
         None,
@@ -44,6 +51,8 @@ contract VehicleRegistry {
     event RoleAssigned(address indexed account, Role role);
 
     event MaintenanceContractLinked(address indexed maintenanceContract);
+
+    event InspectionContractLinked(address indexed inspectionContract);
 
     event OwnershipTransferred(
         string vin,
@@ -91,6 +100,18 @@ contract VehicleRegistry {
         emit MaintenanceContractLinked(maintenanceAddress);
     }
 
+    function linkInspectionContract(
+        address inspectionAddress
+    ) public onlyAdmin {
+        require(
+            inspectionAddress != address(0),
+            "Inspection contract cannot be zero address"
+        );
+
+        inspectionContract = inspectionAddress;
+        emit InspectionContractLinked(inspectionAddress);
+    }
+
     function registerVehicle(
         string memory vin,
         string memory make,
@@ -117,7 +138,9 @@ contract VehicleRegistry {
         emit VehicleRegistered(vin, make, model, year, initialOwner);
     }
 
-    function getVehicleInfo(string memory vin)
+    function getVehicleInfo(
+        string memory vin
+    )
         public
         view
         returns (
@@ -148,6 +171,9 @@ contract VehicleRegistry {
         return vehicles[vin].registered;
     }
 
+    /// @notice Transfers ownership of a vehicle. Performs cross-contract checks
+    /// against MaintenanceLog (odometer consistency) and InspectionRecord
+    /// (current valid roadworthiness inspection). Reverts on any failure.
     function transferOwnership(
         string memory vin,
         address newOwner,
@@ -165,11 +191,19 @@ contract VehicleRegistry {
             "Maintenance contract is not linked"
         );
         require(
+            inspectionContract != address(0),
+            "Inspection contract is not linked"
+        );
+        require(
             IMaintenanceLog(maintenanceContract).verifyOdometerConsistent(
                 vin,
                 declaredMileage
             ),
             "Declared mileage is lower than latest maintenance mileage"
+        );
+        require(
+            IInspectionRecord(inspectionContract).hasValidInspection(vin),
+            "Vehicle has no valid roadworthiness inspection"
         );
 
         address previousOwner = vehicles[vin].currentOwner;
