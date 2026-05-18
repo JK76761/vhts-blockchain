@@ -8,6 +8,16 @@ const ROLE_NAMES = [
   "Government",
   "Owner",
 ];
+const LOCAL_RPC_URL = "http://127.0.0.1:8545";
+const LOCAL_ACTOR_LABELS = {
+  adminGovernment: "Admin/Government",
+  manufacturer: "Manufacturer",
+  serviceCentre: "Service Centre",
+  insurer: "Insurer",
+  government: "Government",
+  owner1: "Owner1",
+  buyer1: "Buyer1",
+};
 const SEVERITY_NAMES = ["Minor", "Moderate", "Major", "TotalLoss"];
 const RESULT_NAMES = ["Fail", "Pass"];
 
@@ -50,6 +60,7 @@ const state = {
   signer: null,
   account: null,
   deployment: null,
+  mode: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -152,6 +163,51 @@ function setAddressValues(contracts) {
   });
 }
 
+function setConnectedAccount(account, mode) {
+  state.account = account;
+  state.mode = mode;
+  $("accountValue").textContent = shortAddress(account);
+  $("roleAccount").value = account;
+}
+
+function populateLocalAccountSelect() {
+  const select = $("localAccountSelect");
+  const currentValue = select.value;
+  select.innerHTML = '<option value="">Local account</option>';
+
+  const actors = state.deployment?.actors;
+  if (!actors) return;
+
+  Object.entries(LOCAL_ACTOR_LABELS).forEach(([key, label]) => {
+    const address = actors[key];
+    if (!ethers.isAddress(address)) return;
+
+    const option = document.createElement("option");
+    option.value = address;
+    option.textContent = `${label} ${shortAddress(address)}`;
+    select.append(option);
+  });
+
+  if (currentValue) {
+    select.value = currentValue;
+  }
+}
+
+function prefillDemoActors() {
+  const actors = state.deployment?.actors;
+  if (!actors) return;
+
+  const ownerField = $("registerForm")?.elements.namedItem("owner");
+  const buyerField = $("transferForm")?.elements.namedItem("newOwner");
+
+  if (ownerField && !ownerField.value && ethers.isAddress(actors.owner1)) {
+    ownerField.value = actors.owner1;
+  }
+  if (buyerField && !buyerField.value && ethers.isAddress(actors.buyer1)) {
+    buyerField.value = actors.buyer1;
+  }
+}
+
 function saveAddressValues() {
   localStorage.setItem("vhts.contracts", JSON.stringify(getAddressValues()));
   setStatus("Addresses saved");
@@ -181,6 +237,8 @@ async function loadDeploymentFile(applyAddresses = true) {
     if (applyAddresses) {
       setAddressValues(state.deployment.contracts);
     }
+    populateLocalAccountSelect();
+    prefillDemoActors();
     setStatus("Deployment loaded");
     logActivity("Loaded frontend/deployment.json.", "success");
     return state.deployment;
@@ -193,31 +251,63 @@ async function loadDeploymentFile(applyAddresses = true) {
 
 async function connectWallet() {
   if (!window.ethereum) {
-    throw new Error("MetaMask or another injected wallet is required");
+    throw new Error("MetaMask is not available in this browser. Use Local demo.");
   }
 
   state.provider = new ethers.BrowserProvider(window.ethereum);
   await state.provider.send("eth_requestAccounts", []);
   state.signer = await state.provider.getSigner();
-  state.account = await state.signer.getAddress();
+  const account = await state.signer.getAddress();
 
-  $("accountValue").textContent = shortAddress(state.account);
-  $("roleAccount").value = state.account;
+  setConnectedAccount(account, "wallet");
   await updateNetwork();
   await refreshAccountRole();
-  setStatus("Wallet connected");
-  logActivity(`Connected ${shortAddress(state.account)}.`, "success");
+  setStatus("MetaMask connected");
+  logActivity(`MetaMask connected ${shortAddress(account)}.`, "success");
+}
+
+async function connectLocal() {
+  state.provider = new ethers.JsonRpcProvider(LOCAL_RPC_URL);
+  const network = await state.provider.getNetwork();
+  if (network.chainId !== 31337n) {
+    throw new Error(`Expected local chain 31337, got ${network.chainId}`);
+  }
+
+  const accounts = await state.provider.send("eth_accounts", []);
+  if (accounts.length === 0) {
+    throw new Error("No unlocked accounts found on the local Hardhat node");
+  }
+
+  const selected = $("localAccountSelect").value;
+  const preferred =
+    selected ||
+    state.deployment?.actors?.adminGovernment ||
+    state.deployment?.actors?.manufacturer ||
+    accounts[0];
+  const account = accounts.find(
+    (candidate) => candidate.toLowerCase() === preferred.toLowerCase(),
+  ) || accounts[0];
+
+  state.signer = await state.provider.getSigner(account);
+  setConnectedAccount(await state.signer.getAddress(), "local");
+  $("localAccountSelect").value = state.account;
+  await updateNetwork();
+  await refreshAccountRole();
+  setStatus("Local demo connected");
+  logActivity(`Local demo connected ${shortAddress(state.account)}.`, "success");
 }
 
 async function updateNetwork() {
   if (!state.provider) return;
   const network = await state.provider.getNetwork();
-  $("networkPill").textContent = `Chain ${network.chainId.toString()}`;
+  const mode = state.mode === "local" ? "Local" : "Wallet";
+  $("networkPill").textContent = `${mode} chain ${network.chainId.toString()}`;
 }
 
 async function switchToLocalChain() {
   if (!window.ethereum) {
-    throw new Error("Wallet not found");
+    await connectLocal();
+    return;
   }
 
   try {
@@ -246,7 +336,7 @@ async function switchToLocalChain() {
 
 async function getContracts() {
   if (!state.signer) {
-    await connectWallet();
+    await connectLocal();
   }
 
   const addresses = getAddressValues();
@@ -503,7 +593,7 @@ function bindFillButtons() {
   document.querySelectorAll("[data-fill-connected]").forEach((button) => {
     button.addEventListener("click", async () => {
       await handleAction(button, async () => {
-        if (!state.account) await connectWallet();
+        if (!state.account) await connectLocal();
         const field = resolveField(button.dataset.fillConnected);
         if (field) field.value = state.account;
       });
@@ -524,8 +614,17 @@ function bindFillButtons() {
 }
 
 function bindEvents() {
+  $("connectLocal").addEventListener("click", (event) => {
+    handleAction(event.currentTarget, connectLocal);
+  });
+
   $("connectWallet").addEventListener("click", (event) => {
     handleAction(event.currentTarget, connectWallet);
+  });
+
+  $("localAccountSelect").addEventListener("change", (event) => {
+    if (event.currentTarget.value === "") return;
+    handleAction(event.currentTarget, connectLocal);
   });
 
   $("loadDeployment").addEventListener("click", (event) => {
@@ -562,7 +661,8 @@ function bindEvents() {
 
   bindForm("registerForm", async (_form, values) => {
     const { registry } = await getContracts();
-    const owner = values.owner.trim() || state.account;
+    const owner =
+      values.owner.trim() || state.deployment?.actors?.owner1 || state.account;
     await sendTransaction(
       "Register vehicle",
       registry.registerVehicle(
@@ -653,6 +753,7 @@ function bindEvents() {
 
   if (window.ethereum) {
     window.ethereum.on("accountsChanged", () => {
+      if (state.mode === "local") return;
       state.account = null;
       connectWallet().catch((error) => {
         setStatus("Wallet disconnected", "warning");
@@ -660,6 +761,7 @@ function bindEvents() {
       });
     });
     window.ethereum.on("chainChanged", () => {
+      if (state.mode === "local") return;
       updateNetwork().catch(() => {});
     });
   }

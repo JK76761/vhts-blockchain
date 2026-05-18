@@ -74,6 +74,10 @@ select {
   padding: 0 12px;
 }
 
+.wallet-box select {
+  width: 190px;
+}
+
 input:focus,
 select:focus,
 button:focus {
