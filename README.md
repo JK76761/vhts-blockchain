@@ -129,6 +129,32 @@ npx hardhat run scripts/deploy.js
 npx hardhat run scripts/demo-scenario.js
 ```
 
+### 심플 프론트엔드 실행
+
+프론트엔드는 `frontend/`에 있는 정적 대시보드입니다. 새 프레임워크 없이 MetaMask + 로컬 Hardhat 노드에 바로 연결합니다.
+
+```shell
+# Terminal 1: 로컬 체인 유지
+npm run node
+
+# Terminal 2: localhost 네트워크에 배포하고 frontend/deployment.json 생성
+npm run deploy:local
+
+# Terminal 3: 프론트엔드 실행
+npm run frontend
+```
+
+브라우저에서 `http://127.0.0.1:5173` 접속 후 MetaMask를 Hardhat Localhost 체인으로 전환합니다. `npm run node` 출력에 있는 로컬 테스트 계정 private key를 MetaMask에 import하면 됩니다.
+
+가장 간단한 데모 흐름:
+
+1. 첫 번째 Hardhat 계정(admin)을 연결
+2. Role 카드에서 현재 계정을 `Manufacturer`로 지정 → 차량 등록
+3. 현재 계정을 `ServiceCentre`로 지정 → 정비 기록 추가
+4. 현재 계정을 `Insurer`로 지정 → 사고/보험 청구 추가
+5. 현재 계정을 `Government`로 지정 → 검사 Pass 추가
+6. Transfer 카드에서 Buyer1으로 소유권 이전
+
 ## 데모 시나리오
 
 `scripts/demo-scenario.js` 또는 `Integration.t.sol::test_FullVehicleLifecycle`이 다음 7단계를 자동 시연합니다:

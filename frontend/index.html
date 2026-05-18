@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VHTS Demo Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Vehicle History Tracking System</p>
+        <h1>VHTS Demo Console</h1>
+      </div>
+      <div class="wallet-box">
+        <span id="networkPill" class="pill">Not connected</span>
+        <button id="connectWallet" type="button">Connect wallet</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="panel setup-panel">
+        <div class="section-heading">
+          <h2>Connection</h2>
+          <span id="statusText" class="status-text">Idle</span>
+        </div>
+
+        <div class="address-grid">
+          <label>
+            VehicleRegistry
+            <input id="registryAddress" autocomplete="off" spellcheck="false" />
+          </label>
+          <label>
+            MaintenanceLog
+            <input id="maintenanceAddress" autocomplete="off" spellcheck="false" />
+          </label>
+          <label>
+            AccidentReport
+            <input id="accidentAddress" autocomplete="off" spellcheck="false" />
+          </label>
+          <label>
+            InspectionRecord
+            <input id="inspectionAddress" autocomplete="off" spellcheck="false" />
+          </label>
+        </div>
+
+        <div class="action-row">
+          <button id="loadDeployment" type="button">Load deployment</button>
+          <button id="saveAddresses" type="button">Save addresses</button>
+          <button id="switchLocal" type="button" class="secondary">Local chain</button>
+        </div>
+
+        <div class="account-strip">
+          <span>Account <strong id="accountValue">-</strong></span>
+          <span>Role <strong id="roleValue">-</strong></span>
+        </div>
+      </section>
+
+      <section class="panel lookup-panel">
+        <div class="section-heading">
+          <h2>Vehicle Lookup</h2>
+          <button id="refreshVehicle" type="button">Refresh</button>
+        </div>
+        <div class="lookup-row">
+          <label>
+            VIN
+            <input id="lookupVin" value="VIN_DEMO_2026" autocomplete="off" />
+          </label>
+        </div>
+        <div class="summary-grid">
+          <div>
+            <span>Latest mileage</span>
+            <strong id="summaryMileage">-</strong>
+          </div>
+          <div>
+            <span>Inspection</span>
+            <strong id="summaryInspection">-</strong>
+          </div>
+          <div>
+            <span>Highest severity</span>
+            <strong id="summarySeverity">-</strong>
+          </div>
+          <div>
+            <span>Owner</span>
+            <strong id="summaryOwner">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="workflow-grid">
+        <form id="roleForm" class="panel">
+          <h2>Role</h2>
+          <label>
+            Account
+            <input id="roleAccount" name="account" autocomplete="off" spellcheck="false" />
+          </label>
+          <label>
+            Role
+            <select name="role">
+              <option value="1">Manufacturer</option>
+              <option value="2">ServiceCentre</option>
+              <option value="3">Insurer</option>
+              <option value="4">Government</option>
+              <option value="5">Owner</option>
+            </select>
+          </label>
+          <div class="action-row">
+            <button type="submit">Assign role</button>
+            <button type="button" class="secondary" data-fill-connected="roleAccount">
+              Current
+            </button>
+          </div>
+        </form>
+
+        <form id="registerForm" class="panel">
+          <h2>Register</h2>
+          <label>
+            VIN
+            <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+          </label>
+          <div class="two-col">
+            <label>
+              Make
+              <input name="make" value="Tesla" autocomplete="off" />
+            </label>
+            <label>
+              Model
+              <input name="model" value="Model 3" autocomplete="off" />
+            </label>
+          </div>
+          <div class="two-col">
+            <label>
+              Year
+              <input name="year" type="number" min="1" value="2026" />
+            </label>
+            <label>
+              Initial owner
+              <input name="owner" autocomplete="off" spellcheck="false" />
+            </label>
+          </div>
+          <div class="action-row">
+            <button type="submit">Register vehicle</button>
+            <button type="button" class="secondary" data-fill-connected="registerForm.owner">
+              Current
+            </button>
+          </div>
+        </form>
+
+        <form id="serviceForm" class="panel">
+          <h2>Maintenance</h2>
+          <label>
+            VIN
+            <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+          </label>
+          <div class="two-col">
+            <label>
+              Service type
+              <input name="serviceType" value="Scheduled service" autocomplete="off" />
+            </label>
+            <label>
+              Mileage
+              <input name="mileage" type="number" min="0" value="15000" />
+            </label>
+          </div>
+          <label>
+            Description
+            <input name="description" value="15,000 km service" autocomplete="off" />
+          </label>
+          <button type="submit">Add service</button>
+        </form>
+
+        <form id="accidentForm" class="panel">
+          <h2>Accident</h2>
+          <label>
+            VIN
+            <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+          </label>
+          <div class="two-col">
+            <label>
+              Severity
+              <select name="severity">
+                <option value="0">Minor</option>
+                <option value="1" selected>Moderate</option>
+                <option value="2">Major</option>
+                <option value="3">TotalLoss</option>
+              </select>
+            </label>
+            <label>
+              Repair cost AUD
+              <input name="repairCost" type="number" min="0" step="0.01" value="3500" />
+            </label>
+          </div>
+          <label>
+            Description
+            <input name="description" value="Rear bumper repair" autocomplete="off" />
+          </label>
+          <button type="submit">Report accident</button>
+        </form>
+
+        <form id="claimForm" class="panel">
+          <h2>Claim</h2>
+          <label>
+            VIN
+            <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+          </label>
+          <div class="two-col">
+            <label>
+              Accident ID
+              <input name="accidentId" type="number" min="0" value="0" />
+            </label>
+            <label>
+              Amount AUD
+              <input name="amount" type="number" min="0" step="0.01" value="3000" />
+            </label>
+          </div>
+          <label>
+            Outcome
+            <select name="outcome">
+              <option value="approved">approved</option>
+              <option value="pending">pending</option>
+              <option value="rejected">rejected</option>
+            </select>
+          </label>
+          <button type="submit">Add claim</button>
+        </form>
+
+        <form id="inspectionForm" class="panel">
+          <h2>Inspection</h2>
+          <label>
+            VIN
+            <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+          </label>
+          <div class="two-col">
+            <label>
+              Result
+              <select name="result">
+                <option value="1">Pass</option>
+                <option value="0">Fail</option>
+              </select>
+            </label>
+            <label>
+              Valid days
+              <input name="days" type="number" min="1" value="365" />
+            </label>
+          </div>
+          <label>
+            Notes
+            <input name="notes" value="Roadworthy inspection passed" autocomplete="off" />
+          </label>
+          <button type="submit">Add inspection</button>
+        </form>
+
+        <form id="transferForm" class="panel">
+          <h2>Transfer</h2>
+          <label>
+            VIN
+            <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+          </label>
+          <div class="two-col">
+            <label>
+              New owner
+              <input name="newOwner" autocomplete="off" spellcheck="false" />
+            </label>
+            <label>
+              Declared mileage
+              <input name="mileage" type="number" min="0" value="16000" />
+            </label>
+          </div>
+          <div class="action-row">
+            <button type="submit">Transfer</button>
+            <button type="button" class="secondary" data-fill-actor="buyer1" data-target="transferForm.newOwner">
+              Buyer1
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="history-grid">
+        <article class="panel">
+          <h2>Vehicle</h2>
+          <div id="vehicleDetails" class="details-list empty">No vehicle loaded.</div>
+        </article>
+        <article class="panel">
+          <h2>Maintenance History</h2>
+          <div id="maintenanceList" class="record-list empty">No records.</div>
+        </article>
+        <article class="panel">
+          <h2>Accident History</h2>
+          <div id="accidentList" class="record-list empty">No records.</div>
+        </article>
+        <article class="panel">
+          <h2>Insurance Claims</h2>
+          <div id="claimList" class="record-list empty">No records.</div>
+        </article>
+        <article class="panel">
+          <h2>Inspections</h2>
+          <div id="inspectionList" class="record-list empty">No records.</div>
+        </article>
+        <article class="panel">
+          <h2>Activity</h2>
+          <ol id="activityLog" class="activity-log"></ol>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

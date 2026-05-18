@@ -13,6 +13,7 @@ typechain-types/
 .env
 .env.*
 !.env.example
+frontend/deployment.json
 
 # Logs
 npm-debug.log*

@@ -16,4 +16,11 @@ export default defineConfig({
     cache: "./cache",
     artifacts: "./artifacts",
   },
+  networks: {
+    localhost: {
+      type: "http",
+      chainType: "generic",
+      url: "http://127.0.0.1:8545",
+    },
+  },
 });
