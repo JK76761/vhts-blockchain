@@ -7,7 +7,11 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "clean": "hardhat clean"
+    "clean": "hardhat clean",
+    "node": "hardhat node",
+    "deploy": "hardhat run scripts/deploy.js",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "frontend": "python3 -m http.server 5174 --bind 127.0.0.1 --directory frontend"
   },
   "keywords": [
     "hardhat",

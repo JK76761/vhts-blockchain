@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VHTS Demo Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Vehicle History Tracking System</p>
+        <h1>VHTS Role Demo</h1>
+      </div>
+      <div class="top-status">
+        <span id="networkPill" class="pill">Not connected</span>
+        <span id="statusText" class="status-text">Idle</span>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="panel setup-panel">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">Step 1</p>
+            <h2>Select demo role</h2>
+          </div>
+          <button id="loadDeployment" type="button" class="secondary">Reload deployment</button>
+        </div>
+
+        <div class="setup-grid">
+          <label>
+            Local account / role
+            <select id="roleSelect" aria-label="Local demo role">
+              <option value="">Loading roles...</option>
+            </select>
+          </label>
+          <button id="connectRole" type="button">Use this role</button>
+        </div>
+
+        <div class="route-strip">
+          <div>
+            <span>From</span>
+            <strong id="accountValue">-</strong>
+          </div>
+          <div>
+            <span>Selected role</span>
+            <strong id="roleValue">-</strong>
+          </div>
+          <div>
+            <span>Primary To</span>
+            <strong id="primaryToValue">-</strong>
+          </div>
+        </div>
+
+        <details class="address-drawer" open>
+          <summary>Contract addresses</summary>
+          <div class="address-grid">
+            <label>
+              VehicleRegistry
+              <input id="registryAddress" autocomplete="off" spellcheck="false" />
+            </label>
+            <label>
+              MaintenanceLog
+              <input id="maintenanceAddress" autocomplete="off" spellcheck="false" />
+            </label>
+            <label>
+              AccidentReport
+              <input id="accidentAddress" autocomplete="off" spellcheck="false" />
+            </label>
+            <label>
+              InspectionRecord
+              <input id="inspectionAddress" autocomplete="off" spellcheck="false" />
+            </label>
+          </div>
+          <div class="action-row">
+            <button id="saveAddresses" type="button" class="secondary">Save addresses</button>
+          </div>
+        </details>
+      </section>
+
+      <section class="main-grid">
+        <section class="panel role-panel">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">Step 2</p>
+              <h2 id="workspaceTitle">Choose a role first</h2>
+            </div>
+          </div>
+
+          <div id="roleIntro" class="role-intro">
+            No role selected.
+          </div>
+
+          <div id="adminActions" class="role-actions" data-role="adminGovernment">
+            <form id="roleForm" class="action-form">
+              <h3>Admin: assign a role</h3>
+              <label>
+                Account
+                <select id="roleAccount" name="account"></select>
+              </label>
+              <label>
+                Role
+                <select name="role">
+                  <option value="1">Manufacturer</option>
+                  <option value="2">ServiceCentre</option>
+                  <option value="3">Insurer</option>
+                  <option value="4">Government</option>
+                  <option value="5">Owner</option>
+                </select>
+              </label>
+              <button type="submit">Assign role</button>
+            </form>
+          </div>
+
+          <div id="manufacturerActions" class="role-actions" data-role="manufacturer">
+            <form id="registerForm" class="action-form">
+              <h3>Manufacturer: register vehicle</h3>
+              <label>
+                VIN
+                <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+              </label>
+              <div class="two-col">
+                <label>
+                  Make
+                  <input name="make" value="Tesla" autocomplete="off" />
+                </label>
+                <label>
+                  Model
+                  <input name="model" value="Model 3" autocomplete="off" />
+                </label>
+              </div>
+              <div class="two-col">
+                <label>
+                  Year
+                  <input name="year" type="number" min="1" value="2026" />
+                </label>
+                <label>
+                  Initial owner
+                  <select name="owner" data-actor-select="owner1"></select>
+                </label>
+              </div>
+              <button type="submit">Register vehicle</button>
+            </form>
+          </div>
+
+          <div id="serviceActions" class="role-actions" data-role="serviceCentre">
+            <form id="serviceForm" class="action-form">
+              <h3>Service centre: add maintenance</h3>
+              <label>
+                VIN
+                <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+              </label>
+              <div class="two-col">
+                <label>
+                  Service type
+                  <input name="serviceType" value="Scheduled service" autocomplete="off" />
+                </label>
+                <label>
+                  Mileage
+                  <input name="mileage" type="number" min="0" value="15000" />
+                </label>
+              </div>
+              <label>
+                Description
+                <input name="description" value="15,000 km service" autocomplete="off" />
+              </label>
+              <button type="submit">Add service</button>
+            </form>
+          </div>
+
+          <div id="insurerActions" class="role-actions" data-role="insurer">
+            <form id="accidentForm" class="action-form">
+              <h3>Insurer: report accident</h3>
+              <label>
+                VIN
+                <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+              </label>
+              <div class="two-col">
+                <label>
+                  Severity
+                  <select name="severity">
+                    <option value="0">Minor</option>
+                    <option value="1" selected>Moderate</option>
+                    <option value="2">Major</option>
+                    <option value="3">TotalLoss</option>
+                  </select>
+                </label>
+                <label>
+                  Repair cost AUD
+                  <input name="repairCost" type="number" min="0" step="0.01" value="3500" />
+                </label>
+              </div>
+              <label>
+                Description
+                <input name="description" value="Rear bumper repair" autocomplete="off" />
+              </label>
+              <button type="submit">Report accident</button>
+            </form>
+
+            <form id="claimForm" class="action-form compact-form">
+              <h3>Insurer: add claim</h3>
+              <label>
+                VIN
+                <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+              </label>
+              <div class="two-col">
+                <label>
+                  Accident ID
+                  <input name="accidentId" type="number" min="0" value="0" />
+                </label>
+                <label>
+                  Amount AUD
+                  <input name="amount" type="number" min="0" step="0.01" value="3000" />
+                </label>
+              </div>
+              <label>
+                Outcome
+                <select name="outcome">
+                  <option value="approved">approved</option>
+                  <option value="pending">pending</option>
+                  <option value="rejected">rejected</option>
+                </select>
+              </label>
+              <button type="submit">Add claim</button>
+            </form>
+          </div>
+
+          <div id="governmentActions" class="role-actions" data-role="government">
+            <form id="inspectionForm" class="action-form">
+              <h3>Government: add inspection</h3>
+              <label>
+                VIN
+                <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+              </label>
+              <div class="two-col">
+                <label>
+                  Result
+                  <select name="result">
+                    <option value="1">Pass</option>
+                    <option value="0">Fail</option>
+                  </select>
+                </label>
+                <label>
+                  Valid days
+                  <input name="days" type="number" min="1" value="365" />
+                </label>
+              </div>
+              <label>
+                Notes
+                <input name="notes" value="Roadworthy inspection passed" autocomplete="off" />
+              </label>
+              <button type="submit">Add inspection</button>
+            </form>
+          </div>
+
+          <div id="ownerActions" class="role-actions" data-role="owner1">
+            <form id="transferForm" class="action-form">
+              <h3>Owner: transfer ownership</h3>
+              <label>
+                VIN
+                <input name="vin" value="VIN_DEMO_2026" autocomplete="off" />
+              </label>
+              <div class="two-col">
+                <label>
+                  New owner
+                  <select name="newOwner" data-actor-select="buyer1"></select>
+                </label>
+                <label>
+                  Declared mileage
+                  <input name="mileage" type="number" min="0" value="16000" />
+                </label>
+              </div>
+              <button type="submit">Transfer</button>
+            </form>
+          </div>
+
+          <div id="buyerActions" class="role-actions" data-role="buyer1">
+            <div class="read-only-note">
+              Buyer is read-only.
+            </div>
+          </div>
+        </section>
+
+        <aside class="side-stack">
+          <section class="panel lookup-panel">
+            <div class="section-heading">
+              <div>
+                <p class="step-label">Step 3</p>
+                <h2>Vehicle lookup</h2>
+              </div>
+              <button id="refreshVehicle" type="button">Refresh</button>
+            </div>
+            <label>
+              VIN
+              <input id="lookupVin" value="VIN_DEMO_2026" autocomplete="off" />
+            </label>
+            <div class="summary-grid">
+              <div>
+                <span>Latest mileage</span>
+                <strong id="summaryMileage">-</strong>
+              </div>
+              <div>
+                <span>Inspection</span>
+                <strong id="summaryInspection">-</strong>
+              </div>
+              <div>
+                <span>Highest severity</span>
+                <strong id="summarySeverity">-</strong>
+              </div>
+              <div>
+                <span>Owner</span>
+                <strong id="summaryOwner">-</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Activity log</h2>
+            <ol id="activityLog" class="activity-log"></ol>
+          </section>
+        </aside>
+      </section>
+
+      <section class="history-grid">
+        <article class="panel">
+          <h2>Vehicle</h2>
+          <div id="vehicleDetails" class="details-list empty">No vehicle loaded.</div>
+        </article>
+        <article class="panel">
+          <h2>Maintenance History</h2>
+          <div id="maintenanceList" class="record-list empty">No records.</div>
+        </article>
+        <article class="panel">
+          <h2>Accident History</h2>
+          <div id="accidentList" class="record-list empty">No records.</div>
+        </article>
+        <article class="panel">
+          <h2>Insurance Claims</h2>
+          <div id="claimList" class="record-list empty">No records.</div>
+        </article>
+        <article class="panel">
+          <h2>Inspections</h2>
+          <div id="inspectionList" class="record-list empty">No records.</div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

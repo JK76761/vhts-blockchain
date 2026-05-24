@@ -129,6 +129,32 @@ npx hardhat run scripts/deploy.js
 npx hardhat run scripts/demo-scenario.js
 ```
 
+### 심플 프론트엔드 실행
+
+프론트엔드는 `frontend/`에 있는 정적 대시보드입니다. 새 프레임워크 없이 로컬 Hardhat 노드에 바로 연결합니다. MetaMask가 없어도 상단의 `Local demo` 버튼으로 Hardhat 테스트 계정을 사용할 수 있습니다.
+
+```shell
+# Terminal 1: 로컬 체인 유지
+npm run node
+
+# Terminal 2: localhost 네트워크에 배포하고 frontend/deployment.json 생성
+npm run deploy:local
+
+# Terminal 3: 프론트엔드 실행
+npm run frontend
+```
+
+브라우저에서 `http://127.0.0.1:5174`로 접속합니다. `http://127.0.0.1:8545`는 JSON-RPC 서버 주소라서 브라우저로 직접 열면 parse error가 나올 수 있습니다.
+
+가장 간단한 데모 흐름:
+
+1. `Local account / role`에서 `Manufacturer` 선택 → 차량 등록
+2. `Service Centre` 선택 → 정비 기록 추가
+3. `Insurer` 선택 → 사고/보험 청구 추가
+4. `Government` 선택 → 검사 Pass 추가
+5. `Owner1` 선택 → Buyer1으로 소유권 이전
+6. `Buyer1` 선택 → Vehicle lookup으로 전체 이력 조회
+
 ## 데모 시나리오
 
 `scripts/demo-scenario.js` 또는 `Integration.t.sol::test_FullVehicleLifecycle`이 다음 7단계를 자동 시연합니다:
