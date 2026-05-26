@@ -1,232 +1,205 @@
 # Vehicle History Tracking System (VHTS)
 
-블록체인 기반 차량 생애주기 이력 관리 시스템 — 중고차 시장의 오도미터 조작과 사고 이력 은폐 문제를 스마트 컨트랙트의 자동 검증으로 해결합니다.
+VHTS is a Solidity and Hardhat project for recording a vehicle's lifecycle history on-chain. It is built around a common used-car problem: buyers often have to trust disconnected records for ownership, servicing, accident history, insurance claims, and roadworthiness inspections.
 
-**IFB452 Blockchain Technology — Final Project, 2026 Semester 1**
-**Group [번호]**
+The project keeps those records in separate smart contracts and lets the registry contract check them before ownership can be transferred.
 
-## 팀
+**IFB452 Blockchain Technology - Final Project, Semester 1 2026**
 
-| 이름 | 학번 |
-|---|---|
+## Team
+
+| Name | Student number |
+| --- | --- |
 | Inkwang Lee | n11789077 |
-| [팀원 이름] | [학번] |
+| [Team member name] | [Student number] |
 
-## 핵심 가치 제안
+## What the System Does
 
-호주 중고차 시장에서는 매년 다음 문제가 반복됩니다:
-- 오도미터 조작 (주행거리 되돌림)
-- 사고 이력 은폐
-- 정기 검사 누락 차량 거래
+The system models six stakeholders in a used-car sale:
 
-VHTS는 이 모든 사건을 **6개 stakeholder가 4개 스마트 컨트랙트에 시점별로 기록**하고, 소유권 이전 시 **cross-contract 호출로 자동 검증**합니다.
+| Stakeholder | Role in the process |
+| --- | --- |
+| Manufacturer | Registers a new vehicle |
+| Service centre | Adds maintenance records and mileage readings |
+| Insurer | Reports accidents and insurance claims |
+| Government | Records roadworthiness inspections |
+| Owner | Starts an ownership transfer |
+| Buyer | Reads the vehicle history before buying |
 
-## 시스템 아키텍처
+The main fraud checks happen during `VehicleRegistry.transferOwnership()`. Before a sale is accepted, the registry calls:
 
-![Architecture](docs/architecture.png)
+- `MaintenanceLog.verifyOdometerConsistent()` to make sure the declared sale mileage is not lower than the latest service mileage.
+- `InspectionRecord.hasValidInspection()` to make sure the vehicle has a passing, unexpired inspection.
 
-> 4개 스마트 컨트랙트가 단일 신뢰 기관 없이 협력하여 차량의 전체 이력을 검증합니다. 핵심은 `VehicleRegistry.transferOwnership()`이 `MaintenanceLog`와 `InspectionRecord`를 직접 호출하여 두 가지 사기 시나리오(오도미터 조작 + 무검사 차량)를 동시에 차단하는 구조입니다.
+If either check fails, the ownership transfer reverts.
 
-## 스마트 컨트랙트 4개
-
-| 컨트랙트 | 역할 | Write 권한 | 핵심 함수 |
-|---|---|---|---|
-| **VehicleRegistry** | 차량 등록, 역할 관리, 소유권 이전 (cross-contract 검증 포함) | Manufacturer, Owner | `registerVehicle`, `transferOwnership`, `assignRole` |
-| **MaintenanceLog** | 정비 이력 + 오도미터 단조증가 검증 | ServiceCentre | `addServiceRecord`, `verifyOdometerConsistent` |
-| **AccidentReport** | 사고 + 보험 청구 + 최고 심각도 추적 | Insurer | `reportAccident`, `addInsuranceClaim` |
-| **InspectionRecord** | 정부 차검 + 유효기간 자동 만료 | Government | `addInspection`, `hasValidInspection` |
-
-## 6명의 Stakeholder
-
-| Stakeholder | 비즈니스 역할 | 컨트랙트 권한 |
-|---|---|---|
-| Manufacturer | 신차 출고/등록 | VehicleRegistry write |
-| ServiceCentre | 정비 기록 | MaintenanceLog write |
-| Insurer | 사고/청구 기록 | AccidentReport write |
-| Government | 차검 기록, 규제 감시 | InspectionRecord write, 모든 컨트랙트 read |
-| Owner | 소유권 이전 시작 | 자기 차량 transferOwnership |
-| Buyer | 구매 전 이력 조회 | 모든 컨트랙트 read-only |
-
-## Cross-Contract Interaction (핵심 차별점)
-
-```
-Owner.transferOwnership(VIN, buyer, 16000) called on VehicleRegistry
-   │
-   ├──► IMaintenanceLog.verifyOdometerConsistent(VIN, 16000)
-   │       └─► returns false if 16000 < latestMileage  →  REVERT
-   │
-   ├──► IInspectionRecord.hasValidInspection(VIN)
-   │       └─► returns false if no Pass OR expired     →  REVERT
-   │
-   └──► All checks pass → Update owner, emit OwnershipTransferred
+```text
+Owner calls VehicleRegistry.transferOwnership(vin, buyer, declaredMileage)
+  |
+  |-- MaintenanceLog.verifyOdometerConsistent(vin, declaredMileage)
+  |     returns false if the mileage has been rolled back
+  |
+  |-- InspectionRecord.hasValidInspection(vin)
+  |     returns false if there is no current passing inspection
+  |
+  `-- If both checks pass, VehicleRegistry updates the owner
 ```
 
-이 구조는 **단일 트랜잭션 안에서 두 개의 다른 컨트랙트를 호출**하여 무결성을 강제합니다. 이것이 평가 기준의 *"Direct interaction between smart contracts is viewed favorably"* 항목을 충족하는 부분입니다.
+## Contracts
 
-## 기술 스택
+| Contract | Purpose | Write access | Main functions |
+| --- | --- | --- | --- |
+| `VehicleRegistry` | Vehicle registration, role management, and ownership transfer | Manufacturer, Owner, Admin | `registerVehicle`, `transferOwnership`, `assignRole` |
+| `MaintenanceLog` | Service history and odometer consistency | ServiceCentre | `addServiceRecord`, `verifyOdometerConsistent`, `getLatestMileage` |
+| `AccidentReport` | Accident reports, insurance claims, and highest severity lookup | Insurer | `reportAccident`, `addInsuranceClaim`, `getHighestSeverityRank` |
+| `InspectionRecord` | Roadworthiness inspections and expiry checks | Government | `addInspection`, `hasValidInspection`, `getInspections` |
 
-- **Solidity** `^0.8.20`
-- **Hardhat** `3.4.3` (재현 가능한 빌드 + 자동 테스트)
-- **자동화 테스트**: 4개 테스트 컨트랙트, 20+ 테스트 함수
-- **배포 자동화**: `scripts/deploy.js`로 4개 컨트랙트 + linkage + role 부여를 한 번에
+## Project Structure
 
-## 프로젝트 구조
-
-```
+```text
 vhts-blockchain/
 ├── contracts/
-│   ├── VehicleRegistry.sol       # 핵심 컨트랙트 (cross-contract calls)
-│   ├── MaintenanceLog.sol        # 정비 이력
-│   ├── AccidentReport.sol        # 사고 + 보험
-│   └── InspectionRecord.sol      # 정부 검사
-├── test/
-│   ├── MaintenanceLog.t.sol      # 정비 로직 단위 테스트
-│   ├── AccidentReport.t.sol      # 사고 로직 단위 테스트
-│   ├── InspectionRecord.t.sol    # 검사 로직 단위 테스트
-│   └── Integration.t.sol         # 4개 컨트랙트 통합 시나리오
+│   ├── VehicleRegistry.sol
+│   ├── MaintenanceLog.sol
+│   ├── AccidentReport.sol
+│   └── InspectionRecord.sol
+├── frontend/
+│   ├── index.html
+│   ├── app.js
+│   ├── styles.css
+│   └── deployment.example.json
 ├── scripts/
-│   ├── deploy.js                 # 4개 컨트랙트 자동 배포 + 역할 부여
-│   └── demo-scenario.js          # 라이브 데모용 시나리오 자동 실행
-├── docs/
-│   ├── architecture.png          # 시스템 아키텍처
-│   ├── bpmn-collaboration.png    # BPMN 협업 뷰
-│   └── bpmn-orchestration-*.png  # 각 stakeholder별 프로세스
+│   ├── deploy.js
+│   └── demo-scenario.js
+├── test/
+│   ├── MaintenanceLog.t.sol
+│   ├── AccidentReport.t.sol
+│   ├── InspectionRecord.t.sol
+│   └── Integration.t.sol
 ├── hardhat.config.js
 ├── package.json
 └── README.md
 ```
 
-## 시작하기
+## Requirements
 
-### 사전 요구사항
-- Node.js ≥ 20
-- npm 또는 yarn
+- Node.js 20 or newer
+- npm
 
-### 설치 & 컴파일 & 테스트
+## Install, Compile, and Test
 
 ```shell
-# 의존성 설치
 npm install
-
-# 모든 컨트랙트 컴파일
 npm run compile
-
-# 자동화 테스트 실행 (Solidity 기반)
 npm test
 ```
 
-### 로컬 배포 (Hardhat 내장 네트워크)
+The test suite contains 22 Solidity tests covering the main success paths and expected reverts.
+
+## Local Deployment
+
+For a persistent local deployment, keep a Hardhat node running in one terminal:
 
 ```shell
-# 4개 컨트랙트 배포 + 역할 부여를 한 번에
-npx hardhat run scripts/deploy.js
-```
-
-출력의 컨트랙트 주소 4개를 `scripts/demo-scenario.js`의 상수에 붙여넣은 뒤:
-
-```shell
-# 등록 → 정비 → 사고 → 검사 → 사기 시도 → 정상 이전까지 자동 시연
-npx hardhat run scripts/demo-scenario.js
-```
-
-### 심플 프론트엔드 실행
-
-프론트엔드는 `frontend/`에 있는 정적 대시보드입니다. 새 프레임워크 없이 로컬 Hardhat 노드에 바로 연결합니다. MetaMask가 없어도 상단의 `Local demo` 버튼으로 Hardhat 테스트 계정을 사용할 수 있습니다.
-
-```shell
-# Terminal 1: 로컬 체인 유지
 npm run node
+```
 
-# Terminal 2: localhost 네트워크에 배포하고 frontend/deployment.json 생성
+Then deploy the contracts to that local chain from a second terminal:
+
+```shell
 npm run deploy:local
+```
 
-# Terminal 3: 프론트엔드 실행
+The deployment script prints the four contract addresses and the demo stakeholder accounts. Keep that output open if you want to run the frontend or the demo script.
+
+## Frontend Demo
+
+The frontend is a static HTML/CSS/JavaScript dashboard in `frontend/`. It connects directly to the local Hardhat JSON-RPC node at `http://127.0.0.1:8545`.
+
+After running `npm run deploy:local`, create a local deployment file:
+
+```shell
+cp frontend/deployment.example.json frontend/deployment.json
+```
+
+Paste the contract addresses and stakeholder account addresses from the deployment output into `frontend/deployment.json`.
+
+Then start the frontend:
+
+```shell
 npm run frontend
 ```
 
-브라우저에서 `http://127.0.0.1:5174`로 접속합니다. `http://127.0.0.1:8545`는 JSON-RPC 서버 주소라서 브라우저로 직접 열면 parse error가 나올 수 있습니다.
+Open:
 
-가장 간단한 데모 흐름:
-
-1. `Local account / role`에서 `Manufacturer` 선택 → 차량 등록
-2. `Service Centre` 선택 → 정비 기록 추가
-3. `Insurer` 선택 → 사고/보험 청구 추가
-4. `Government` 선택 → 검사 Pass 추가
-5. `Owner1` 선택 → Buyer1으로 소유권 이전
-6. `Buyer1` 선택 → Vehicle lookup으로 전체 이력 조회
-
-## 데모 시나리오
-
-`scripts/demo-scenario.js` 또는 `Integration.t.sol::test_FullVehicleLifecycle`이 다음 7단계를 자동 시연합니다:
-
-1. **등록** — Manufacturer가 Tesla Model 3 (VIN: `VIN_DEMO_2026`) 등록, 초기 소유자는 Owner1
-2. **정비** — ServiceCentre가 500km, 15,000km 두 번 정비 기록
-3. **사고** — Insurer가 Moderate 사고 보고 (\$3,500 수리비), \$3,000 보험금 승인
-4. **검사** — Government가 차검 PASS 기록 (1년 유효)
-5. **사기 시도** — Owner가 10,000km로 Buyer에게 판매 시도 → **REVERT** ("Declared mileage is lower than latest maintenance mileage")
-6. **정상 이전** — Owner가 16,000km로 재시도 → **성공**
-7. **조회** — Buyer가 정비/사고/검사 이력을 모두 read-only로 확인
-
-## 배포 주소 (Sepolia Testnet)
-
-> 최종 데모 직전 Sepolia 배포 후 갱신
-
-| Contract | Address |
-|---|---|
-| VehicleRegistry | `0x...` |
-| MaintenanceLog | `0x...` |
-| AccidentReport | `0x...` |
-| InspectionRecord | `0x...` |
-
-## 비즈니스 프로세스 (BPMN)
-
-- [Collaboration view (전체 stakeholder 간 메시지 흐름)](docs/bpmn-collaboration.png)
-- [Orchestration views (개별 stakeholder 프로세스)](docs/)
-
-각 BPMN은 스마트 컨트랙트 실행 **전·중·후**의 비즈니스 활동을 모두 포함합니다 (과제 요구사항 3.b).
-
-## 설계 선택 근거
-
-### 왜 4개로 분리했나
-- **Separation of concerns**: 각 도메인(등록/정비/사고/검사)의 stakeholder와 로직이 독립적
-- **모듈러 업그레이드**: 한 컨트랙트만 수정해도 나머지에 영향 없음
-- **가스 최적화**: 사용하지 않는 도메인의 코드는 호출 비용에 포함되지 않음
-
-### 왜 Solidity/Ethereum인가
-- 과제 요구사항 (Solidity for Ethereum smart contracts)
-- 성숙한 도구 생태계 (Hardhat, ethers.js, Etherscan)
-- 광범위한 검증 가능성 (모든 트랜잭션이 공개 블록 익스플로러에서 확인 가능)
-
-### `latestMileage` 매핑은 왜 별도로 두었나
-주행거리 검증마다 정비 이력 배열을 끝까지 읽으면 O(n) 가스 비용. 별도 매핑으로 O(1) 조회 — 차량 보유 기간이 길수록 누적 효과 큼.
-
-## 한계 및 향후 과제
-
-| 한계 | 대응 / 한계 인정 |
-|---|---|
-| **Oracle problem** | 입력 데이터의 정확성은 검증 불가. 다중 출처 cross-reference, 통계적 이상치 플래그로 부분 대응. 완전한 해결은 신뢰할 수 있는 데이터 소스 필요. |
-| **개인정보 / GDPR** | 온체인에는 주소 + 해시만 기록. 실제 PII는 IPFS에 암호화 저장하는 패턴 가정. "Right to erasure"와의 근본적 충돌은 한계로 인정. |
-| **가스비** | 현재 Sepolia 기준 등록 ~150k gas. 대규모 운영 시 Layer 2 (Polygon, Arbitrum) 마이그레이션 권장. View 함수는 gas-free. |
-| **Adoption (chicken-and-egg)** | 정부 또는 대형 보험사를 anchor stakeholder로 시작하는 단계적 도입 전략 필요 |
-| **연결 lock 부재** | `linkMaintenanceContract`/`linkInspectionContract`는 admin이 재호출 가능. 운영 환경에서는 한 번 설정 후 동결하는 패턴 고려. |
-
-## 자동화 테스트 결과
-
-```
-test/MaintenanceLog.t.sol      — 7 tests
-test/AccidentReport.t.sol      — 6 tests
-test/InspectionRecord.t.sol    — 7 tests
-test/Integration.t.sol         — 2 end-to-end scenarios
+```text
+http://127.0.0.1:5174
 ```
 
-테스트는 Happy path와 Negative path (revert 케이스)를 모두 커버합니다.
+The JSON-RPC server is on `http://127.0.0.1:8545`, but that address is for blockchain calls rather than browser viewing.
 
-## 참고 문헌
+Suggested demo flow:
 
-- Wüst, K., & Gervais, A. (2018). Do you need a blockchain? *CVCBT*.
-- Androulaki, E. et al. (2018). Hyperledger Fabric: A distributed operating system for permissioned blockchains. *EuroSys*.
-- Benet, J. (2014). IPFS - Content addressed, versioned, P2P file system. *arXiv:1407.3561*.
+1. Select `Manufacturer` and register `VIN_DEMO_2026`.
+2. Select `Service Centre` and add a service record.
+3. Select `Insurer` and add an accident report and claim.
+4. Select `Government` and add a passing inspection.
+5. Select `Owner1` and transfer the vehicle to `Buyer1`.
+6. Select `Buyer1` and look up the vehicle history.
 
-## 라이선스
+## Terminal Demo Scenario
 
-MIT
+The scripted demo follows the same lifecycle:
+
+1. Manufacturer registers a Tesla Model 3 with VIN `VIN_DEMO_2026`.
+2. Service centre adds maintenance records at 500 km and 15,000 km.
+3. Insurer records a moderate accident and an approved insurance claim.
+4. Government adds a passing inspection.
+5. Owner tries to sell the vehicle with a declared mileage of 10,000 km.
+6. The transfer reverts because the declared mileage is below the latest service mileage.
+7. Owner retries with 16,000 km and the transfer succeeds.
+8. Buyer reads the full service, accident, claim, and inspection history.
+
+To run it locally, start the Hardhat node in one terminal:
+
+```shell
+npm run node
+```
+
+Then deploy from another terminal:
+
+```shell
+npm run deploy:local
+```
+
+Paste the four deployed contract addresses into `scripts/demo-scenario.js`, then run:
+
+```shell
+npx hardhat run scripts/demo-scenario.js --network localhost
+```
+
+## Design Notes
+
+The contracts are split by responsibility instead of putting every record type into one contract. This keeps access control simple and mirrors the real stakeholders:
+
+- `VehicleRegistry` handles ownership and role assignment.
+- `MaintenanceLog` only accepts service-centre writes.
+- `AccidentReport` only accepts insurer writes.
+- `InspectionRecord` only accepts government writes.
+
+`VehicleRegistry` still coordinates the sale, because the ownership transfer is where the system needs to enforce the cross-contract checks.
+
+`MaintenanceLog` stores `latestMileage` separately from the full service history. That avoids scanning an array every time the registry needs to check a sale mileage.
+
+## Current Limitations
+
+| Limitation | Notes |
+| --- | --- |
+| Input data still needs trust | The blockchain can preserve records, but it cannot prove that a service centre entered the correct mileage in the first place. |
+| Privacy is simplified | This version stores only addresses and vehicle records directly on-chain. A production system would need a clearer off-chain storage and privacy model. |
+| Admin can relink contracts | `linkMaintenanceContract` and `linkInspectionContract` can be called again by the admin. In production, these links should probably be locked after setup or controlled by governance. |
+| Local demo only | The repository is set up for local Hardhat use. A public testnet deployment would need network configuration and funded deployer keys. |
+
+## License
+
+MIT. See `LICENSE`.
