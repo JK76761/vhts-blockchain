@@ -11,7 +11,7 @@ The project keeps those records in separate smart contracts and lets the registr
 | Name | Student number |
 | --- | --- |
 | Inkwang Lee | n11789077 |
-| [Team member name] | [Student number] |
+| Josh Kim | n11760087 |
 
 ## What the System Does
 
