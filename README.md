@@ -110,19 +110,11 @@ Then deploy the contracts to that local chain from a second terminal:
 npm run deploy:local
 ```
 
-The deployment script prints the four contract addresses and the demo stakeholder accounts. Keep that output open if you want to run the frontend or the demo script.
+The deployment script prints the four contract addresses, assigns the demo stakeholder roles, and writes `frontend/deployment.json` for the browser demo.
 
 ## Frontend Demo
 
 The frontend is a static HTML/CSS/JavaScript dashboard in `frontend/`. It connects directly to the local Hardhat JSON-RPC node at `http://127.0.0.1:8545`.
-
-After running `npm run deploy:local`, create a local deployment file:
-
-```shell
-cp frontend/deployment.example.json frontend/deployment.json
-```
-
-Paste the contract addresses and stakeholder account addresses from the deployment output into `frontend/deployment.json`.
 
 Then start the frontend:
 
@@ -137,6 +129,8 @@ http://127.0.0.1:5174
 ```
 
 The JSON-RPC server is on `http://127.0.0.1:8545`, but that address is for blockchain calls rather than browser viewing.
+
+MetaMask is also supported from the frontend. Click `Connect MetaMask`; the app will request the local Hardhat network (`chainId` 31337) and use the connected wallet as the transaction signer. To run the role demo through MetaMask, import the matching Hardhat demo account into MetaMask or assign a VHTS role to your connected wallet from the admin role first.
 
 Suggested demo flow:
 

@@ -76,6 +76,14 @@ const ACTOR_OPTIONS = {
   buyer1: "Buyer1",
 };
 
+const CONTRACT_ROLE_TO_ROLE_KEY = {
+  1: "manufacturer",
+  2: "serviceCentre",
+  3: "insurer",
+  4: "government",
+  5: "owner1",
+};
+
 const ABIS = {
   registry: [
     "function assignRole(address account, uint8 role)",
@@ -108,6 +116,7 @@ const state = {
   signer: null,
   account: null,
   selectedRole: null,
+  connectionType: null,
   deployment: null,
 };
 
@@ -143,13 +152,34 @@ function escapeHtml(value) {
 }
 
 function cleanError(error) {
-  const message =
+  const message = String(
     error?.reason ||
     error?.shortMessage ||
     error?.info?.error?.message ||
+    error?.error?.message ||
     error?.data?.message ||
     error?.message ||
-    String(error);
+    error,
+  );
+
+  if (error?.code === 4001 || error?.code === "ACTION_REJECTED") {
+    return "MetaMask request was rejected";
+  }
+
+  if (
+    message.includes("ECONNREFUSED") ||
+    message.includes("Failed to fetch") ||
+    message.includes("Could not fetch chain ID") ||
+    message.includes("Could not connect to the custom network") ||
+    message.includes("could not detect network") ||
+    message.includes("Cannot fulfill request")
+  ) {
+    return "Hardhat node is offline. Run npm run node first.";
+  }
+
+  if (message.includes("insufficient funds")) {
+    return "Wallet has no local ETH for gas. Import a funded Hardhat account or fund this address.";
+  }
 
   return message
     .replace("execution reverted: ", "")
@@ -160,6 +190,13 @@ function cleanError(error) {
     .slice(0, 280);
 }
 
+function statusMessageForError(message) {
+  const [firstSentence] = message.split(".");
+  return firstSentence.length > 64
+    ? `${firstSentence.slice(0, 61)}...`
+    : firstSentence;
+}
+
 function shortAddress(address) {
   if (!address || !ethers.isAddress(address)) return "-";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -167,6 +204,31 @@ function shortAddress(address) {
 
 function shortHash(hash) {
   return `${hash.slice(0, 10)}...${hash.slice(-6)}`;
+}
+
+function getExpectedChainId() {
+  return BigInt(state.deployment?.chainId || 31337);
+}
+
+function chainIdToHex(chainId) {
+  return `0x${chainId.toString(16)}`;
+}
+
+function describeNetwork(chainId) {
+  return chainId === 31337n ? "Local chain 31337" : `Chain ${chainId}`;
+}
+
+async function ensureLocalRpcReady(expectedChainId = 31337n) {
+  try {
+    const provider = new ethers.JsonRpcProvider(LOCAL_RPC_URL);
+    const network = await provider.getNetwork();
+    if (network.chainId !== expectedChainId) {
+      throw new Error(`Expected chain ${expectedChainId}, got ${network.chainId}`);
+    }
+    return provider;
+  } catch (error) {
+    throw new Error(cleanError(error));
+  }
 }
 
 function formatNumber(value) {
@@ -221,6 +283,17 @@ function getActors() {
 function getRoleAddress(roleKey) {
   const config = ROLE_CONFIG[roleKey];
   return config ? getActors()[config.actorKey] : undefined;
+}
+
+function findActorRoleKey(address) {
+  if (!ethers.isAddress(address)) return null;
+  const normalized = address.toLowerCase();
+
+  return (
+    Object.keys(ROLE_CONFIG).find(
+      (roleKey) => getRoleAddress(roleKey)?.toLowerCase() === normalized,
+    ) || null
+  );
 }
 
 function getTargetAddress(targetName) {
@@ -292,6 +365,38 @@ function populateActorSelects() {
   });
 }
 
+function setSelectedRole(roleKey) {
+  state.selectedRole = roleKey || null;
+
+  const select = $("roleSelect");
+  if (roleKey && [...select.options].some((option) => option.value === roleKey)) {
+    select.value = roleKey;
+  }
+}
+
+function updateConnectionUi(network = null) {
+  const isMetaMask = state.connectionType === "metamask";
+  const isLocal = state.connectionType === "local";
+  const buttonText = $("walletButtonText");
+
+  $("accountValue").textContent = state.account || "-";
+  $("walletValue").textContent = isMetaMask
+    ? `MetaMask ${shortAddress(state.account)}`
+    : isLocal
+      ? "Local demo account"
+      : "Not connected";
+
+  $("connectWallet").classList.toggle("connected", isMetaMask);
+  $("disconnectWallet").hidden = !isMetaMask;
+  buttonText.textContent = isMetaMask ? "MetaMask connected" : "Connect MetaMask";
+
+  if (network) {
+    $("networkPill").textContent = describeNetwork(network.chainId);
+  } else if (!state.provider) {
+    $("networkPill").textContent = "Not connected";
+  }
+}
+
 async function loadDeploymentFile(applyAddresses = true) {
   try {
     const response = await fetch(`./deployment.json?t=${Date.now()}`, {
@@ -320,11 +425,8 @@ async function connectSelectedRole() {
   const config = ROLE_CONFIG[roleKey];
   if (!config) throw new Error("Select a demo role first");
 
-  state.provider = new ethers.JsonRpcProvider(LOCAL_RPC_URL);
+  state.provider = await ensureLocalRpcReady(31337n);
   const network = await state.provider.getNetwork();
-  if (network.chainId !== 31337n) {
-    throw new Error(`Expected local chain 31337, got ${network.chainId}`);
-  }
 
   const accounts = await state.provider.send("eth_accounts", []);
   const desiredAddress = getRoleAddress(roleKey);
@@ -337,14 +439,128 @@ async function connectSelectedRole() {
 
   state.signer = await state.provider.getSigner(account);
   state.account = await state.signer.getAddress();
-  state.selectedRole = roleKey;
+  state.connectionType = "local";
+  setSelectedRole(roleKey);
 
-  $("networkPill").textContent = `Local chain ${network.chainId.toString()}`;
-  $("accountValue").textContent = state.account;
+  updateConnectionUi(network);
   await refreshAccountRole();
   renderRoleWorkspace();
   setStatus(`${config.label} ready`);
   logActivity(`From ${shortAddress(state.account)} as ${config.label}.`, "success");
+}
+
+async function requestMetaMaskNetwork(chainId) {
+  const ethereum = window.ethereum;
+  const chainIdHex = chainIdToHex(chainId);
+
+  try {
+    await ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chainIdHex }],
+    });
+  } catch (error) {
+    if (error.code !== 4902 || chainId !== 31337n) {
+      throw error;
+    }
+
+    await ethereum.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId: chainIdHex,
+          chainName: "Hardhat Localhost 31337",
+          nativeCurrency: {
+            name: "Ethereum",
+            symbol: "ETH",
+            decimals: 18,
+          },
+          rpcUrls: [LOCAL_RPC_URL],
+        },
+      ],
+    });
+  }
+}
+
+async function resolveMetaMaskRole() {
+  const actorRole = findActorRoleKey(state.account);
+  if (actorRole) return actorRole;
+
+  const registryAddress = $("registryAddress").value.trim();
+  if (!ethers.isAddress(registryAddress)) return null;
+
+  const registry = new ethers.Contract(
+    registryAddress,
+    ABIS.registry,
+    state.provider,
+  );
+
+  try {
+    const contractRole = Number(await registry.roles(state.account));
+    return CONTRACT_ROLE_TO_ROLE_KEY[contractRole] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function connectMetaMask() {
+  const ethereum = window.ethereum;
+  if (!ethereum) {
+    throw new Error("MetaMask is not installed in this browser");
+  }
+
+  let provider = new ethers.BrowserProvider(ethereum);
+  await provider.send("eth_requestAccounts", []);
+
+  let network = await provider.getNetwork();
+  const expectedChainId = getExpectedChainId();
+  if (network.chainId !== expectedChainId) {
+    setStatus(`Switch MetaMask to ${describeNetwork(expectedChainId)}`, "warning");
+    if (expectedChainId === 31337n) {
+      await ensureLocalRpcReady(expectedChainId);
+    }
+    await requestMetaMaskNetwork(expectedChainId);
+    provider = new ethers.BrowserProvider(ethereum);
+    network = await provider.getNetwork();
+  }
+
+  state.provider = provider;
+  state.signer = await provider.getSigner();
+  state.account = await state.signer.getAddress();
+  state.connectionType = "metamask";
+
+  const roleKey = await resolveMetaMaskRole();
+  setSelectedRole(roleKey);
+  updateConnectionUi(network);
+  await refreshAccountRole();
+  renderRoleWorkspace();
+
+  if (roleKey) {
+    const label = ROLE_CONFIG[roleKey].label;
+    setStatus(`MetaMask ${label} ready`);
+    logActivity(`MetaMask connected as ${shortAddress(state.account)} (${label}).`, "success");
+  } else {
+    setStatus("Wallet connected, no role", "warning");
+    logActivity(
+      `MetaMask connected as ${shortAddress(
+        state.account,
+      )}, but this address has no VHTS role yet.`,
+    );
+  }
+}
+
+function disconnectMetaMask() {
+  const account = state.account;
+  state.provider = null;
+  state.signer = null;
+  state.account = null;
+  state.connectionType = null;
+  setSelectedRole(null);
+
+  $("roleValue").textContent = "-";
+  updateConnectionUi();
+  renderRoleWorkspace();
+  setStatus("Wallet disconnected");
+  logActivity(`MetaMask disconnected from ${shortAddress(account)}.`);
 }
 
 function renderRoleWorkspace() {
@@ -613,7 +829,7 @@ async function handleAction(button, callback) {
     await callback();
   } catch (error) {
     const message = cleanError(error);
-    setStatus("Action failed", "error");
+    setStatus(statusMessageForError(message), "error");
     logActivity(message, "error");
   } finally {
     button.disabled = false;
@@ -629,10 +845,49 @@ function bindForm(id, callback) {
   });
 }
 
+function bindMetaMaskEvents() {
+  const ethereum = window.ethereum;
+  if (!ethereum?.on) return;
+
+  ethereum.on("accountsChanged", async (accounts) => {
+    if (state.connectionType !== "metamask") return;
+
+    if (accounts.length === 0) {
+      disconnectMetaMask();
+      setStatus("Wallet locked", "warning");
+      return;
+    }
+
+    try {
+      await connectMetaMask();
+    } catch (error) {
+      setStatus("Wallet update failed", "error");
+      logActivity(cleanError(error), "error");
+    }
+  });
+
+  ethereum.on("chainChanged", async () => {
+    if (state.connectionType !== "metamask") return;
+
+    try {
+      await connectMetaMask();
+    } catch (error) {
+      setStatus("Network update failed", "error");
+      logActivity(cleanError(error), "error");
+    }
+  });
+}
+
 function bindEvents() {
   $("connectRole").addEventListener("click", (event) => {
     handleAction(event.currentTarget, connectSelectedRole);
   });
+
+  $("connectWallet").addEventListener("click", (event) => {
+    handleAction(event.currentTarget, connectMetaMask);
+  });
+
+  $("disconnectWallet").addEventListener("click", disconnectMetaMask);
 
   $("roleSelect").addEventListener("change", (event) => {
     handleAction(event.currentTarget, connectSelectedRole);
@@ -641,7 +896,11 @@ function bindEvents() {
   $("loadDeployment").addEventListener("click", (event) => {
     handleAction(event.currentTarget, async () => {
       await loadDeploymentFile(true);
-      await connectSelectedRole();
+      if (state.connectionType === "metamask") {
+        await connectMetaMask();
+      } else {
+        await connectSelectedRole();
+      }
     });
   });
 
@@ -652,19 +911,31 @@ function bindEvents() {
   });
 
   Object.values(ADDRESS_FIELDS).forEach((id) => {
-    $(id).addEventListener("change", () => {
-      refreshAccountRole();
+    $(id).addEventListener("change", async () => {
+      if (state.connectionType === "metamask") {
+        setSelectedRole(await resolveMetaMaskRole());
+      }
+      await refreshAccountRole();
       renderRoleWorkspace();
     });
   });
 
   bindForm("roleForm", async (_form, values) => {
+    const account = values.customAccount.trim() || values.account.trim();
+    if (!ethers.isAddress(account)) {
+      throw new Error("Enter a valid account address");
+    }
+
     const { registry } = await getContracts();
     await sendTransaction(
       "Assign role",
       "VehicleRegistry",
-      registry.assignRole(values.account.trim(), Number(values.role)),
+      registry.assignRole(account, Number(values.role)),
     );
+    if (account.toLowerCase() === state.account?.toLowerCase()) {
+      setSelectedRole(await resolveMetaMaskRole());
+      renderRoleWorkspace();
+    }
     await refreshAccountRole();
   });
 
@@ -767,6 +1038,8 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  bindMetaMaskEvents();
+  updateConnectionUi();
   const hasSavedAddresses = loadSavedAddresses();
   await loadDeploymentFile(!hasSavedAddresses);
   renderRoleWorkspace();

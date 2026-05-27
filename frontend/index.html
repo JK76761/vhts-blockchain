@@ -30,18 +30,31 @@
 
         <div class="setup-grid">
           <label>
-            Local account / role
+            Local demo account / role
             <select id="roleSelect" aria-label="Local demo role">
               <option value="">Loading roles...</option>
             </select>
           </label>
-          <button id="connectRole" type="button">Use this role</button>
+          <button id="connectRole" type="button">Use local role</button>
+          <div class="wallet-actions" aria-label="MetaMask wallet controls">
+            <button id="connectWallet" type="button" class="wallet-button">
+              <span class="wallet-mark" aria-hidden="true">MM</span>
+              <span id="walletButtonText">Connect MetaMask</span>
+            </button>
+            <button id="disconnectWallet" type="button" class="secondary wallet-disconnect" hidden>
+              Disconnect
+            </button>
+          </div>
         </div>
 
         <div class="route-strip">
           <div>
             <span>From</span>
             <strong id="accountValue">-</strong>
+          </div>
+          <div>
+            <span>Wallet</span>
+            <strong id="walletValue">Not connected</strong>
           </div>
           <div>
             <span>Selected role</span>
@@ -98,6 +111,15 @@
               <label>
                 Account
                 <select id="roleAccount" name="account"></select>
+              </label>
+              <label>
+                Custom account
+                <input
+                  name="customAccount"
+                  placeholder="0x..."
+                  autocomplete="off"
+                  spellcheck="false"
+                />
               </label>
               <label>
                 Role

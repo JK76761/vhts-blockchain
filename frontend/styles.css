@@ -8,6 +8,9 @@
   --line: #d9dfd3;
   --accent: #0f766e;
   --accent-strong: #115e59;
+  --wallet: #f6851b;
+  --wallet-strong: #d36b07;
+  --wallet-ink: #29170a;
   --warning: #a16207;
   --danger: #b42318;
   --shadow: 0 10px 24px rgba(32, 35, 31, 0.07);
@@ -61,6 +64,45 @@ button.secondary {
 
 button.secondary:hover {
   background: #e3eadf;
+}
+
+button.wallet-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 190px;
+  background: var(--wallet);
+  color: var(--wallet-ink);
+  box-shadow: 0 8px 18px rgba(246, 133, 27, 0.2);
+}
+
+button.wallet-button:hover {
+  background: var(--wallet-strong);
+  color: #ffffff;
+}
+
+button.wallet-button.connected {
+  background: #17211c;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.wallet-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  background:
+    linear-gradient(135deg, #fff2d8 0 28%, transparent 28% 100%),
+    linear-gradient(45deg, #a44b12, #f59e0b 62%, #7c2d12);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0;
 }
 
 input,
@@ -146,6 +188,7 @@ h3 {
 .status-text {
   display: inline-flex;
   align-items: center;
+  max-width: min(460px, 100%);
   min-height: 32px;
   border-radius: 999px;
   padding: 0 11px;
@@ -153,6 +196,8 @@ h3 {
   color: var(--accent-strong);
   font-size: 0.78rem;
   font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -200,14 +245,25 @@ h3 {
 
 .setup-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 160px;
+  grid-template-columns: minmax(260px, 1fr) 150px minmax(220px, 0.42fr);
   gap: 12px;
   align-items: end;
 }
 
+.wallet-actions {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wallet-disconnect {
+  flex: 0 0 auto;
+  padding-inline: 12px;
+}
+
 .route-strip {
   display: grid;
-  grid-template-columns: 1.4fr 1.15fr 1.2fr;
+  grid-template-columns: 1.35fr 1fr 1.15fr 1.2fr;
   gap: 12px;
 }
 
@@ -457,6 +513,7 @@ h3 {
   }
 
   .main-grid,
+  .setup-grid,
   .route-strip {
     grid-template-columns: 1fr;
   }
@@ -489,5 +546,13 @@ h3 {
 
   .panel {
     padding: 15px;
+  }
+
+  .wallet-actions {
+    flex-direction: column;
+  }
+
+  button.wallet-button {
+    min-width: 0;
   }
 }

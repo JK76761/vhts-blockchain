@@ -1,35 +1,138 @@
 // scripts/deploy.js
 //
-// VHTS deployment script for Hardhat 3 (ESM).
+// Deploys the VHTS contracts to a running local Hardhat JSON-RPC node.
 //
-// Usage:
-//   npx hardhat run scripts/deploy.js
-//   npx hardhat run scripts/deploy.js --network sepolia   (if configured)
-//
-// What this script does:
-//   1. Deploys VehicleRegistry first (it has no constructor args).
-//   2. Deploys MaintenanceLog, AccidentReport, InspectionRecord, each with
-//      the registry's address as constructor arg.
-//   3. Calls registry.linkMaintenanceContract() and linkInspectionContract()
-//      so transferOwnership can perform its cross-contract checks.
-//   4. Assigns roles to the first few signer accounts so the deployment is
-//      immediately demo-ready: account[0] is admin/government by default
-//      (constructor sets that), and accounts 1..4 become Manufacturer,
-//      ServiceCentre, Insurer, Government respectively.
-//   5. Prints a clean summary block you can copy into the README.
-//
-// NOTE on Hardhat 3:
-//   Hardhat 3 exposes ethers via `network.connect()`. If your local Hardhat 3
-//   environment loads ethers differently, replace the import with whatever
-//   your installed Hardhat plugin provides (e.g. viem). The deployment logic
-//   below uses only standard ethers v6 API.
+// This project intentionally keeps dependencies small, so the script uses
+// standard JSON-RPC calls instead of relying on the Hardhat ethers plugin.
 
-import { network } from "hardhat";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { keccak256 } from "ethereum-cryptography/keccak.js";
+import { bytesToHex, utf8ToBytes } from "ethereum-cryptography/utils.js";
+
+const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8545";
+const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const ROLES = {
+  Manufacturer: 1,
+  ServiceCentre: 2,
+  Insurer: 3,
+  Government: 4,
+  Owner: 5,
+};
+
+function artifactPath(contractName) {
+  return path.join(
+    ROOT_DIR,
+    "artifacts",
+    "contracts",
+    `${contractName}.sol`,
+    `${contractName}.json`,
+  );
+}
+
+function loadArtifact(contractName) {
+  return JSON.parse(fs.readFileSync(artifactPath(contractName), "utf8"));
+}
+
+function strip0x(value) {
+  return String(value).replace(/^0x/i, "");
+}
+
+function encodeAddress(address) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    throw new Error(`Invalid address: ${address}`);
+  }
+
+  return strip0x(address).toLowerCase().padStart(64, "0");
+}
+
+function encodeUint(value) {
+  return BigInt(value).toString(16).padStart(64, "0");
+}
+
+function selector(signature) {
+  return bytesToHex(keccak256(utf8ToBytes(signature))).slice(0, 8);
+}
+
+function encodeCall(signature, encodedArgs = []) {
+  return `0x${selector(signature)}${encodedArgs.join("")}`;
+}
+
+function encodeConstructorArgs(encodedArgs = []) {
+  return encodedArgs.join("");
+}
+
+async function rpc(method, params = []) {
+  const response = await fetch(RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method,
+      params,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`RPC ${method} failed with HTTP ${response.status}`);
+  }
+
+  const body = await response.json();
+  if (body.error) {
+    throw new Error(body.error.message || JSON.stringify(body.error));
+  }
+
+  return body.result;
+}
+
+async function waitForReceipt(hash) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const receipt = await rpc("eth_getTransactionReceipt", [hash]);
+    if (receipt) {
+      if (receipt.status !== "0x1") {
+        throw new Error(`Transaction reverted: ${hash}`);
+      }
+      return receipt;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Timed out waiting for transaction: ${hash}`);
+}
+
+async function sendTransaction(tx) {
+  const hash = await rpc("eth_sendTransaction", [tx]);
+  return waitForReceipt(hash);
+}
+
+async function deployContract(contractName, from, constructorArgs = []) {
+  const artifact = loadArtifact(contractName);
+  const data = `${artifact.bytecode}${encodeConstructorArgs(constructorArgs)}`;
+  const receipt = await sendTransaction({ from, data });
+  return receipt.contractAddress;
+}
+
+async function callContract(from, to, signature, encodedArgs) {
+  return sendTransaction({
+    from,
+    to,
+    data: encodeCall(signature, encodedArgs),
+  });
+}
+
+function writeDeploymentFile(deployment) {
+  const targetPath = path.join(ROOT_DIR, "frontend", "deployment.json");
+  fs.writeFileSync(targetPath, `${JSON.stringify(deployment, null, 2)}\n`);
+  return targetPath;
+}
 
 async function main() {
-  const { ethers } = await network.connect();
-
-  const signers = await ethers.getSigners();
+  const chainId = Number(BigInt(await rpc("eth_chainId")));
+  const accounts = await rpc("eth_accounts");
   const [
     deployer,
     manufacturer,
@@ -38,85 +141,109 @@ async function main() {
     government,
     owner1,
     buyer1,
-  ] = signers;
+  ] = accounts;
+
+  if (!deployer || !buyer1) {
+    throw new Error("Hardhat node needs at least seven unlocked accounts");
+  }
 
   console.log("\n============================================================");
   console.log("VHTS Deployment");
   console.log("============================================================");
-  console.log("Deployer (admin): ", deployer.address);
-  const deployerBal = await ethers.provider.getBalance(deployer.address);
-  console.log("Deployer balance:  ", ethers.formatEther(deployerBal), "ETH");
+  console.log("RPC URL:           ", RPC_URL);
+  console.log("Chain ID:          ", chainId);
+  console.log("Deployer (admin): ", deployer);
+  const deployerBal = await rpc("eth_getBalance", [deployer, "latest"]);
+  console.log("Deployer balance:  ", `${BigInt(deployerBal) / 10n ** 18n} ETH`);
   console.log();
 
-  // ---------- 1. VehicleRegistry ----------
   console.log("Deploying VehicleRegistry...");
-  const VehicleRegistry = await ethers.getContractFactory("VehicleRegistry");
-  const registry = await VehicleRegistry.deploy();
-  await registry.waitForDeployment();
-  const registryAddress = await registry.getAddress();
+  const registryAddress = await deployContract("VehicleRegistry", deployer);
   console.log("  -> VehicleRegistry:   ", registryAddress);
 
-  // ---------- 2. MaintenanceLog ----------
   console.log("Deploying MaintenanceLog...");
-  const MaintenanceLog = await ethers.getContractFactory("MaintenanceLog");
-  const maintenance = await MaintenanceLog.deploy(registryAddress);
-  await maintenance.waitForDeployment();
-  const maintenanceAddress = await maintenance.getAddress();
+  const maintenanceAddress = await deployContract("MaintenanceLog", deployer, [
+    encodeAddress(registryAddress),
+  ]);
   console.log("  -> MaintenanceLog:    ", maintenanceAddress);
 
-  // ---------- 3. AccidentReport ----------
   console.log("Deploying AccidentReport...");
-  const AccidentReport = await ethers.getContractFactory("AccidentReport");
-  const accident = await AccidentReport.deploy(registryAddress);
-  await accident.waitForDeployment();
-  const accidentAddress = await accident.getAddress();
+  const accidentAddress = await deployContract("AccidentReport", deployer, [
+    encodeAddress(registryAddress),
+  ]);
   console.log("  -> AccidentReport:    ", accidentAddress);
 
-  // ---------- 4. InspectionRecord ----------
   console.log("Deploying InspectionRecord...");
-  const InspectionRecord = await ethers.getContractFactory("InspectionRecord");
-  const inspection = await InspectionRecord.deploy(registryAddress);
-  await inspection.waitForDeployment();
-  const inspectionAddress = await inspection.getAddress();
+  const inspectionAddress = await deployContract("InspectionRecord", deployer, [
+    encodeAddress(registryAddress),
+  ]);
   console.log("  -> InspectionRecord:  ", inspectionAddress);
 
-  // ---------- 5. Wire cross-contract addresses ----------
   console.log("\nLinking cross-contract addresses...");
-  await (await registry.linkMaintenanceContract(maintenanceAddress)).wait();
+  await callContract(deployer, registryAddress, "linkMaintenanceContract(address)", [
+    encodeAddress(maintenanceAddress),
+  ]);
   console.log("  -> linkMaintenanceContract OK");
-  await (await registry.linkInspectionContract(inspectionAddress)).wait();
+  await callContract(deployer, registryAddress, "linkInspectionContract(address)", [
+    encodeAddress(inspectionAddress),
+  ]);
   console.log("  -> linkInspectionContract  OK");
 
-  // ---------- 6. Assign demo roles ----------
-  // Role enum: None=0, Manufacturer=1, ServiceCentre=2, Insurer=3,
-  //            Government=4, Owner=5
   console.log("\nAssigning stakeholder roles...");
-  if (manufacturer) {
-    await (await registry.assignRole(manufacturer.address, 1)).wait();
-    console.log("  -> Manufacturer:  ", manufacturer.address);
-  }
-  if (serviceCentre) {
-    await (await registry.assignRole(serviceCentre.address, 2)).wait();
-    console.log("  -> ServiceCentre: ", serviceCentre.address);
-  }
-  if (insurer) {
-    await (await registry.assignRole(insurer.address, 3)).wait();
-    console.log("  -> Insurer:       ", insurer.address);
-  }
-  if (government) {
-    await (await registry.assignRole(government.address, 4)).wait();
-    console.log("  -> Government:    ", government.address);
-  }
-  if (owner1) {
-    await (await registry.assignRole(owner1.address, 5)).wait();
-    console.log("  -> Owner1:        ", owner1.address);
-  }
-  if (buyer1) {
-    await (await registry.assignRole(buyer1.address, 5)).wait();
-    console.log("  -> Buyer1:        ", buyer1.address);
-  }
+  await callContract(deployer, registryAddress, "assignRole(address,uint8)", [
+    encodeAddress(manufacturer),
+    encodeUint(ROLES.Manufacturer),
+  ]);
+  console.log("  -> Manufacturer:  ", manufacturer);
+  await callContract(deployer, registryAddress, "assignRole(address,uint8)", [
+    encodeAddress(serviceCentre),
+    encodeUint(ROLES.ServiceCentre),
+  ]);
+  console.log("  -> ServiceCentre: ", serviceCentre);
+  await callContract(deployer, registryAddress, "assignRole(address,uint8)", [
+    encodeAddress(insurer),
+    encodeUint(ROLES.Insurer),
+  ]);
+  console.log("  -> Insurer:       ", insurer);
+  await callContract(deployer, registryAddress, "assignRole(address,uint8)", [
+    encodeAddress(government),
+    encodeUint(ROLES.Government),
+  ]);
+  console.log("  -> Government:    ", government);
+  await callContract(deployer, registryAddress, "assignRole(address,uint8)", [
+    encodeAddress(owner1),
+    encodeUint(ROLES.Owner),
+  ]);
+  console.log("  -> Owner1:        ", owner1);
+  await callContract(deployer, registryAddress, "assignRole(address,uint8)", [
+    encodeAddress(buyer1),
+    encodeUint(ROLES.Owner),
+  ]);
+  console.log("  -> Buyer1:        ", buyer1);
 
-  // ---------- 7. Final summary ----------
+  const deployment = {
+    generatedAt: new Date().toISOString(),
+    network: "localhost",
+    chainId,
+    contracts: {
+      VehicleRegistry: registryAddress,
+      MaintenanceLog: maintenanceAddress,
+      AccidentReport: accidentAddress,
+      InspectionRecord: inspectionAddress,
+    },
+    actors: {
+      adminGovernment: deployer,
+      manufacturer,
+      serviceCentre,
+      insurer,
+      government,
+      owner1,
+      buyer1,
+    },
+  };
+
+  const deploymentPath = writeDeploymentFile(deployment);
+
   console.log("\n============================================================");
   console.log("Deployment complete");
   console.log("============================================================");
@@ -125,24 +252,21 @@ async function main() {
   console.log("AccidentReport:    ", accidentAddress);
   console.log("InspectionRecord:  ", inspectionAddress);
   console.log();
-  console.log("Stakeholder accounts (paste into README/demo notes):");
-  console.log("  Admin/Government (default): ", deployer.address);
-  if (manufacturer)
-    console.log("  Manufacturer:               ", manufacturer.address);
-  if (serviceCentre)
-    console.log("  ServiceCentre:              ", serviceCentre.address);
-  if (insurer)
-    console.log("  Insurer:                    ", insurer.address);
-  if (government)
-    console.log("  Government (assigned):      ", government.address);
-  if (owner1) console.log("  Owner1:                     ", owner1.address);
-  if (buyer1) console.log("  Buyer1:                     ", buyer1.address);
+  console.log("Stakeholder accounts:");
+  console.log("  Admin/Government (default): ", deployer);
+  console.log("  Manufacturer:               ", manufacturer);
+  console.log("  ServiceCentre:              ", serviceCentre);
+  console.log("  Insurer:                    ", insurer);
+  console.log("  Government (assigned):      ", government);
+  console.log("  Owner1:                     ", owner1);
+  console.log("  Buyer1:                     ", buyer1);
+  console.log();
+  console.log("Frontend deployment file:");
+  console.log(" ", path.relative(ROOT_DIR, deploymentPath));
   console.log("============================================================\n");
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
